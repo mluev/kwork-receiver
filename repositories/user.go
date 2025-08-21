@@ -9,9 +9,11 @@ import (
 	"github.com/google/uuid"
 )
 
-func CreateUser(sender *tgbotapi.User) (models.User, error) {
+func CreateUser(sender *tgbotapi.User, chatId int64) (models.User, error) {
+	log.Println(sender.ID)
 	user := models.User{
 		TelegramId: sender.ID,
+		ChatId:     chatId,
 		Username:   sender.UserName,
 		Name:       fmt.Sprintf("%s %v", sender.FirstName, sender.LastName),
 		ID:         uuid.New(),
@@ -25,6 +27,7 @@ func CreateUser(sender *tgbotapi.User) (models.User, error) {
 }
 
 func GetUser(telegramId int64) (models.User, error) {
+	log.Println(telegramId)
 	var result models.User
 
 	err := DB.Model(&models.User{}).Where("telegram_id = ?", telegramId).First(&result).Error
@@ -36,4 +39,12 @@ func UpdateUser(user models.User) error {
 	err := DB.Save(&user).Error
 
 	return err
+}
+
+func GetReadyUsers() ([]models.User, error) {
+	var users []models.User
+
+	err := DB.Model(&models.User{}).Where("receiving = ?", true).Find(&users).Error
+
+	return users, err
 }

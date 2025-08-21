@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"kworker/repositories"
 	"log"
 
@@ -27,7 +28,7 @@ func toggleStatus(bot *tgbotapi.BotAPI, update tgbotapi.Update, status bool) {
 	user, err := repositories.GetUser(sender.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			user, err = repositories.CreateUser(sender)
+			user, err = repositories.CreateUser(sender, update.Message.Chat.ID)
 			if err != nil {
 				log.Fatalf("Error creating user: %v", err)
 			}
@@ -60,7 +61,7 @@ func start(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Println("new user")
-			_, err = repositories.CreateUser(sender)
+			_, err = repositories.CreateUser(sender, update.Message.Chat.ID)
 			if err != nil {
 				log.Fatalf("Error creating user: %v", err)
 			}
@@ -71,6 +72,19 @@ func start(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
 	msg.Text = "Start getting orders - /on\nStop getting orders - /off"
+
+	bot.Send(msg)
+}
+
+func me(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
+	user, err := repositories.GetUser(update.Message.From.ID)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
+	if (err != nil) {
+		msg.Text = "Error fetching user information"
+	} else {
+		msg.Text = fmt.Sprintf("User ID: %d\nUsername: %s\nFirst Name: %s", user.ID, user.Username, user.Name)
+	}
 
 	bot.Send(msg)
 }

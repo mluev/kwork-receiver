@@ -4,9 +4,13 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
+	"kworker/repositories"
 	"log"
 	"net/http"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 const url = "https://kwork.ru/projects"
@@ -32,6 +36,7 @@ const headersJSON = `{
   "sec-ch-ua-mobile": "?0",
   "sec-ch-ua-platform": "\"macOS\""
 }`
+
 type Response struct {
     Data Data `json:"data"`
 }
@@ -41,20 +46,21 @@ type Data struct {
 }
 
 type Task struct {
-    ID     int    `json:"id"`
-    Status string `json:"status"`
-    Name   string `json:"name"`
+    ID          int    `json:"id"`
+    Status      string `json:"status"`
+    Name        string `json:"name"`
+    Price       string `json:"priceLimit"`
+    Description string `json:"description"`
 }
 
-func FetchTasks() (Response, error) {
+var lastTaskID int
+
+func fetchTasks() (Response, error) {
 	resp, err := http.Post(url, "application/json", nil)
 	if err != nil {
 		log.Fatalf("Error creating request: %v", err)
 	}
 	defer resp.Body.Close()
-
-	fmt.Println("Status:", resp.Status)
-	fmt.Println("Headers:", resp.Header)
 
 	var reader io.ReadCloser
 	switch resp.Header.Get("Content-Encoding") {
@@ -77,10 +83,60 @@ func FetchTasks() (Response, error) {
 	if err := json.Unmarshal(bodyBytes,	&body); err != nil {
 		log.Fatalf("Error unmarshaling response body: %v", err)
 	}
-	fmt.Println("Got wants:", body.Data.Tasks)
-	for _, w := range body.Data.Tasks {
-	    fmt.Printf("Id: %d, Status: %s, Name: %s\n", w.ID, w.Status, w.Name)
-	}
 
 	return body, nil
+}
+
+func getNewTasks() ([]Task) {
+	var newTasks, _ = fetchTasks()
+
+	var tasks []Task
+	for _, task := range newTasks.Data.Tasks {
+		if (task.ID == lastTaskID) {
+			break
+		}
+
+		tasks = append(tasks, task)
+	}
+
+	lastTaskID = newTasks.Data.Tasks[0].ID
+	return tasks
+}
+
+func SendNewTasks(bot *tgbotapi.BotAPI) {
+	var readyUsers, err = repositories.GetReadyUsers()
+
+	if err != nil {
+		log.Fatalf("Error getting ready users: %v", err)
+	}
+
+	if (len(readyUsers) == 0) {
+		return
+	}
+
+	var newTasks = getNewTasks()
+
+	for _, user := range readyUsers {
+		for _, task := range newTasks {
+			fmt.Println(user.ChatId)
+
+			msgContent := fmt.Sprintf(
+				"<b>%s</b>\n%s\n\n<b>Цена:</b> %s\n\n<a href=\"https://kwork.ru/projects/%d/view\">Открыть задачу</a>",
+				html.EscapeString(task.Name),
+				html.EscapeString(task.Description),
+				html.EscapeString(task.Price),
+				task.ID,
+			)
+
+			msg := tgbotapi.NewMessage(user.ChatId, msgContent)
+			msg.ParseMode = "HTML"
+
+		    _, err := bot.Send(msg)
+	        if err != nil {
+	            log.Printf("failed to send to user %d: %v", user.ChatId, err)
+	        } else {
+	            log.Printf("sent to user %d: %s", user.ChatId, task.Name)
+	        }
+		}
+	}
 }
